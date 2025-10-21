@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 import type { Track } from '@/pages/Index';
@@ -13,39 +14,57 @@ interface WaveformEditorProps {
 
 const WaveformEditor = ({ track, onUpdate }: WaveformEditorProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.7);
+  
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(100);
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [isDraggingStart, setIsDraggingStart] = useState(false);
+  const [isDraggingEnd, setIsDraggingEnd] = useState(false);
+  const [isDraggingRegion, setIsDraggingRegion] = useState(false);
+  const [dragStartX, setDragStartX] = useState(0);
+  
   const [waveformData, setWaveformData] = useState<number[]>([]);
-  const animationFrameRef = useRef<number>();
+  const [zoom, setZoom] = useState(1);
+  const [scrollOffset, setScrollOffset] = useState(0);
+  
+  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [gridSize, setGridSize] = useState(1); // seconds
 
   useEffect(() => {
     if (track) {
       loadAudioData(track.audioUrl);
       setTrimStart(0);
       setTrimEnd(100);
+      setZoom(1);
+      setScrollOffset(0);
     }
+    
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
       }
     };
   }, [track]);
 
   const loadAudioData = async (url: string) => {
     try {
-      const context = new (window.AudioContext || (window as any).webkitAudioContext)();
-      setAudioContext(context);
-
+      const context = new AudioContext();
       const response = await fetch(url);
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await context.decodeAudioData(arrayBuffer);
 
+      setDuration(audioBuffer.duration);
+
+      // Генерируем больше точек для детализации
       const rawData = audioBuffer.getChannelData(0);
-      const samples = 500;
+      const samples = 2000;
       const blockSize = Math.floor(rawData.length / samples);
       const filteredData = [];
 
@@ -62,154 +81,278 @@ const WaveformEditor = ({ track, onUpdate }: WaveformEditorProps) => {
       const normalizedData = filteredData.map(n => n * multiplier);
       setWaveformData(normalizedData);
 
-      drawWaveform(normalizedData, 0);
+      // Initialize audio element
+      const audio = new Audio(url);
+      audio.volume = volume;
+      audio.addEventListener('loadedmetadata', () => {
+        setDuration(audio.duration);
+      });
+      audio.addEventListener('timeupdate', () => {
+        setCurrentTime(audio.currentTime);
+      });
+      audio.addEventListener('ended', () => {
+        setIsPlaying(false);
+        audio.currentTime = 0;
+      });
+      audioRef.current = audio;
     } catch (error) {
       console.error('Error loading audio:', error);
       toast.error('Ошибка загрузки аудио');
     }
   };
 
-  const drawWaveform = (data: number[], playheadPosition: number = 0) => {
+  const drawWaveform = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || data.length === 0) return;
+    if (!canvas || waveformData.length === 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const padding = 20;
-    canvas.width = canvas.offsetWidth * dpr;
-    canvas.height = canvas.offsetHeight * dpr;
-    ctx.scale(dpr, dpr);
-
     const width = canvas.offsetWidth;
     const height = canvas.offsetHeight;
-    const barWidth = width / data.length;
+    
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
 
     ctx.clearRect(0, 0, width, height);
 
-    const trimStartPos = (trimStart / 100) * width;
-    const trimEndPos = (trimEnd / 100) * width;
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = 'rgba(139, 92, 246, 0.1)';
-    ctx.fillRect(0, 0, trimStartPos, height);
-    ctx.fillRect(trimEndPos, 0, width - trimEndPos, height);
+    // Grid lines
+    if (duration > 0) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.lineWidth = 1;
+      const gridInterval = gridSize; // seconds
+      const pixelsPerSecond = (width / duration) * zoom;
+      
+      for (let i = 0; i <= duration; i += gridInterval) {
+        const x = (i * pixelsPerSecond) - scrollOffset;
+        if (x >= 0 && x <= width) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, height);
+          ctx.stroke();
+          
+          // Time labels
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.font = '10px monospace';
+          ctx.fillText(formatTime(i), x + 2, 12);
+        }
+      }
+    }
 
-    data.forEach((value, index) => {
-      const barHeight = (value * (height - padding * 2)) / 2;
-      const x = index * barWidth;
+    // Waveform
+    const barWidth = (width / waveformData.length) * zoom;
+    const trimStartX = (trimStart / 100) * width;
+    const trimEndX = (trimEnd / 100) * width;
+
+    waveformData.forEach((value, index) => {
+      const x = (index * barWidth) - scrollOffset;
+      if (x < -barWidth || x > width) return;
+
+      const barHeight = (value * (height * 0.8)) / 2;
       const y = height / 2;
 
-      const isInTrimRange = x >= trimStartPos && x <= trimEndPos;
+      const isInTrimRange = x >= trimStartX && x <= trimEndX;
       const gradient = ctx.createLinearGradient(0, y - barHeight, 0, y + barHeight);
       
       if (isInTrimRange) {
-        gradient.addColorStop(0, 'rgba(139, 92, 246, 0.8)');
-        gradient.addColorStop(0.5, 'rgba(251, 146, 60, 0.8)');
-        gradient.addColorStop(1, 'rgba(139, 92, 246, 0.8)');
+        gradient.addColorStop(0, 'rgba(139, 92, 246, 0.9)');
+        gradient.addColorStop(0.5, 'rgba(251, 146, 60, 0.9)');
+        gradient.addColorStop(1, 'rgba(139, 92, 246, 0.9)');
       } else {
-        gradient.addColorStop(0, 'rgba(139, 92, 246, 0.2)');
-        gradient.addColorStop(0.5, 'rgba(251, 146, 60, 0.2)');
-        gradient.addColorStop(1, 'rgba(139, 92, 246, 0.2)');
+        gradient.addColorStop(0, 'rgba(100, 100, 100, 0.3)');
+        gradient.addColorStop(0.5, 'rgba(150, 150, 150, 0.3)');
+        gradient.addColorStop(1, 'rgba(100, 100, 100, 0.3)');
       }
 
       ctx.fillStyle = gradient;
-      ctx.fillRect(x, y - barHeight, barWidth - 1, barHeight * 2);
+      ctx.fillRect(x, y - barHeight, Math.max(barWidth - 0.5, 1), barHeight * 2);
     });
 
-    const playheadX = (playheadPosition / 100) * width;
-    ctx.strokeStyle = '#fb923c';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(playheadX, 0);
-    ctx.lineTo(playheadX, height);
-    ctx.stroke();
+    // Trim region overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, trimStartX, height);
+    ctx.fillRect(trimEndX, 0, width - trimEndX, height);
 
-    ctx.strokeStyle = 'rgba(139, 92, 246, 0.8)';
-    ctx.lineWidth = 3;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(trimStartPos, 0);
-    ctx.lineTo(trimStartPos, height);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(trimEndPos, 0);
-    ctx.lineTo(trimEndPos, height);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // Trim markers
+    const markerHeight = height;
+    
+    // Start marker
+    ctx.fillStyle = 'rgba(139, 92, 246, 0.3)';
+    ctx.fillRect(trimStartX - 2, 0, 4, markerHeight);
+    ctx.fillStyle = 'rgba(139, 92, 246, 1)';
+    ctx.fillRect(trimStartX - 6, 0, 12, 30);
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('◀', trimStartX, 20);
+
+    // End marker
+    ctx.fillStyle = 'rgba(251, 146, 60, 0.3)';
+    ctx.fillRect(trimEndX - 2, 0, 4, markerHeight);
+    ctx.fillStyle = 'rgba(251, 146, 60, 1)';
+    ctx.fillRect(trimEndX - 6, 0, 12, 30);
+    ctx.fillStyle = 'white';
+    ctx.fillText('▶', trimEndX, 20);
+
+    // Playhead
+    if (duration > 0) {
+      const playheadX = ((currentTime / duration) * width);
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(playheadX, 0);
+      ctx.lineTo(playheadX, height);
+      ctx.stroke();
+      
+      // Playhead circle
+      ctx.fillStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.arc(playheadX, 15, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.textAlign = 'start';
+  }, [waveformData, trimStart, trimEnd, currentTime, duration, zoom, scrollOffset, gridSize]);
+
+  useEffect(() => {
+    drawWaveform();
+  }, [drawWaveform]);
+
+  const snapValue = (value: number) => {
+    if (!snapToGrid || duration === 0) return value;
+    const timeValue = (value / 100) * duration;
+    const snappedTime = Math.round(timeValue / gridSize) * gridSize;
+    return (snappedTime / duration) * 100;
   };
 
-  const togglePlayPause = () => {
-    if (!track) return;
+  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    if (!audioRef.current) {
-      audioRef.current = new Audio(track.audioUrl);
-      audioRef.current.addEventListener('timeupdate', handleTimeUpdate);
-      audioRef.current.addEventListener('ended', () => setIsPlaying(false));
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const percentage = (x / rect.width) * 100;
+
+    const startX = (trimStart / 100) * rect.width;
+    const endX = (trimEnd / 100) * rect.width;
+
+    if (Math.abs(x - startX) < 15) {
+      setIsDraggingStart(true);
+    } else if (Math.abs(x - endX) < 15) {
+      setIsDraggingEnd(true);
+    } else if (x > startX && x < endX) {
+      setIsDraggingRegion(true);
+      setDragStartX(percentage);
     }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    let percentage = (x / rect.width) * 100;
+    percentage = Math.max(0, Math.min(100, percentage));
+
+    if (isDraggingStart) {
+      const snapped = snapValue(percentage);
+      setTrimStart(Math.min(snapped, trimEnd - 0.5));
+    } else if (isDraggingEnd) {
+      const snapped = snapValue(percentage);
+      setTrimEnd(Math.max(snapped, trimStart + 0.5));
+    } else if (isDraggingRegion) {
+      const delta = percentage - dragStartX;
+      const regionSize = trimEnd - trimStart;
+      
+      let newStart = trimStart + delta;
+      let newEnd = trimEnd + delta;
+      
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = regionSize;
+      } else if (newEnd > 100) {
+        newEnd = 100;
+        newStart = 100 - regionSize;
+      }
+      
+      setTrimStart(newStart);
+      setTrimEnd(newEnd);
+      setDragStartX(percentage);
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDraggingStart(false);
+    setIsDraggingEnd(false);
+    setIsDraggingRegion(false);
+  };
+
+  const togglePlayPause = async () => {
+    if (!audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play();
+      await audioRef.current.play();
       setIsPlaying(true);
     }
   };
 
-  const handleTimeUpdate = () => {
-    if (!audioRef.current || !track) return;
-    const progress = (audioRef.current.currentTime / track.duration) * 100;
-    setCurrentTime(progress);
-    drawWaveform(waveformData, progress);
+  const playSelection = async () => {
+    if (!audioRef.current) return;
+    
+    const startTime = (trimStart / 100) * duration;
+    audioRef.current.currentTime = startTime;
+    await audioRef.current.play();
+    setIsPlaying(true);
+
+    const checkEnd = setInterval(() => {
+      if (audioRef.current) {
+        const endTime = (trimEnd / 100) * duration;
+        if (audioRef.current.currentTime >= endTime) {
+          audioRef.current.pause();
+          setIsPlaying(false);
+          clearInterval(checkEnd);
+        }
+      }
+    }, 100);
   };
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!track || !audioRef.current || !canvasRef.current) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const percentage = (x / rect.width) * 100;
-    const newTime = (percentage / 100) * track.duration;
-
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(percentage);
-    drawWaveform(waveformData, percentage);
-  };
-
-  const handleTrimStartChange = (value: number[]) => {
-    const newStart = Math.min(value[0], trimEnd - 5);
-    setTrimStart(newStart);
-    drawWaveform(waveformData, currentTime);
-  };
-
-  const handleTrimEndChange = (value: number[]) => {
-    const newEnd = Math.max(value[0], trimStart + 5);
-    setTrimEnd(newEnd);
-    drawWaveform(waveformData, currentTime);
-  };
-
-  const applyTrim = () => {
-    if (!track) return;
-
-    const startTime = (trimStart / 100) * track.duration;
-    const endTime = (trimEnd / 100) * track.duration;
-    const newDuration = endTime - startTime;
-
-    toast.success(`Трек обрезан: ${startTime.toFixed(1)}с - ${endTime.toFixed(1)}с`);
-  };
-
-  const resetTrim = () => {
-    setTrimStart(0);
-    setTrimEnd(100);
-    drawWaveform(waveformData, currentTime);
-    toast.info('Обрезка сброшена');
+  const handleTimeInput = (value: string, type: 'start' | 'end') => {
+    const parts = value.split(':');
+    if (parts.length !== 2) return;
+    
+    const mins = parseInt(parts[0]) || 0;
+    const secs = parseInt(parts[1]) || 0;
+    const totalSeconds = mins * 60 + secs;
+    const percentage = (totalSeconds / duration) * 100;
+    
+    if (type === 'start') {
+      setTrimStart(Math.min(percentage, trimEnd - 0.5));
+    } else {
+      setTrimEnd(Math.max(percentage, trimStart + 0.5));
+    }
   };
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const ms = Math.floor((seconds % 1) * 10);
+    return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
+  };
+
+  const applyTrim = () => {
+    if (!track) return;
+    toast.success(`Трек обрезан: ${formatTime((trimStart / 100) * duration)} - ${formatTime((trimEnd / 100) * duration)}`);
+    onUpdate(track, 'Трек обрезан');
   };
 
   if (!track) {
@@ -223,122 +366,211 @@ const WaveformEditor = ({ track, onUpdate }: WaveformEditorProps) => {
     );
   }
 
-  const startTime = (trimStart / 100) * track.duration;
-  const endTime = (trimEnd / 100) * track.duration;
+  const startTime = (trimStart / 100) * duration;
+  const endTime = (trimEnd / 100) * duration;
+  const selectionDuration = endTime - startTime;
 
   return (
     <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Icon name="Waveform" className="text-primary" />
-          Редактор формы волны
+          Профессиональный редактор формы волны
         </CardTitle>
         <CardDescription>
-          {track.title} • {track.artist}
+          {track.title} • {track.artist} • {formatTime(duration)}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="relative">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-4 bg-background/50 rounded-lg border border-border/50">
+          <div>
+            <Label className="text-xs text-muted-foreground">Начало</Label>
+            <div className="text-lg font-bold text-primary">{formatTime(startTime)}</div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Конец</Label>
+            <div className="text-lg font-bold text-secondary">{formatTime(endTime)}</div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Длительность</Label>
+            <div className="text-lg font-bold">{formatTime(selectionDuration)}</div>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground">Текущее время</Label>
+            <div className="text-lg font-bold text-green-500">{formatTime(currentTime)}</div>
+          </div>
+        </div>
+
+        <div 
+          ref={containerRef}
+          className="relative"
+          onMouseLeave={handleMouseUp}
+        >
           <canvas
             ref={canvasRef}
-            onClick={handleCanvasClick}
-            className="w-full h-48 bg-background/50 rounded-lg border border-border/50 cursor-pointer hover:border-primary/50 transition-colors"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            className="w-full h-64 rounded-lg border-2 border-border/50 cursor-crosshair hover:border-primary/50 transition-colors"
           />
         </div>
 
-        <div className="flex items-center justify-center gap-4">
+        <div className="flex items-center gap-4">
           <Button
             onClick={togglePlayPause}
             size="lg"
             className="bg-gradient-to-r from-primary to-secondary"
           >
-            <Icon name={isPlaying ? 'Pause' : 'Play'} className="mr-2" />
+            <Icon name={isPlaying ? 'Pause' : 'Play'} className="mr-2" size={20} />
             {isPlaying ? 'Пауза' : 'Воспроизвести'}
           </Button>
 
-          <div className="text-sm text-muted-foreground">
-            {formatTime((currentTime / 100) * track.duration)} / {formatTime(track.duration)}
-          </div>
-        </div>
+          <Button
+            onClick={playSelection}
+            size="lg"
+            variant="outline"
+          >
+            <Icon name="Play" className="mr-2" size={20} />
+            Прослушать выделение
+          </Button>
 
-        <div className="space-y-6 p-6 bg-background/50 rounded-lg border border-border/50">
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-semibold flex items-center gap-2">
-                <Icon name="ScissorsLineDashed" size={16} className="text-primary" />
-                Начало обрезки
-              </label>
-              <span className="text-sm text-muted-foreground">
-                {formatTime(startTime)}
-              </span>
-            </div>
-            <Slider
-              value={[trimStart]}
-              onValueChange={handleTrimStartChange}
-              max={100}
-              step={0.1}
-              className="w-full"
-            />
-          </div>
+          <div className="flex-1" />
 
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <label className="text-sm font-semibold flex items-center gap-2">
-                <Icon name="ScissorsLineDashed" size={16} className="text-secondary" />
-                Конец обрезки
-              </label>
-              <span className="text-sm text-muted-foreground">
-                {formatTime(endTime)}
-              </span>
-            </div>
-            <Slider
-              value={[trimEnd]}
-              onValueChange={handleTrimEndChange}
-              max={100}
-              step={0.1}
-              className="w-full"
-            />
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-border/50">
-            <div className="text-sm">
-              <span className="text-muted-foreground">Длительность после обрезки: </span>
-              <span className="font-semibold text-primary">
-                {formatTime(endTime - startTime)}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex gap-3">
+          <div className="flex items-center gap-2">
+            <Label className="text-sm">Сетка:</Label>
             <Button
-              onClick={applyTrim}
-              className="flex-1 bg-gradient-to-r from-primary to-secondary"
+              onClick={() => setSnapToGrid(!snapToGrid)}
+              variant={snapToGrid ? 'default' : 'outline'}
+              size="sm"
             >
-              <Icon name="Check" className="mr-2" size={16} />
-              Применить обрезку
+              <Icon name="Grid3x3" size={16} />
             </Button>
-            <Button onClick={resetTrim} variant="outline">
-              <Icon name="RotateCcw" size={16} className="mr-2" />
-              Сбросить
-            </Button>
+            <select
+              value={gridSize}
+              onChange={(e) => setGridSize(parseFloat(e.target.value))}
+              className="px-2 py-1 bg-background border border-border rounded text-sm"
+            >
+              <option value="0.1">0.1с</option>
+              <option value="0.5">0.5с</option>
+              <option value="1">1с</option>
+              <option value="5">5с</option>
+            </select>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 text-sm">
-          <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-center">
-            <Icon name="Timer" className="mx-auto mb-1 text-primary" size={20} />
-            <p className="text-xs text-muted-foreground">Оригинал</p>
-            <p className="font-semibold">{formatTime(track.duration)}</p>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="space-y-3 p-4 bg-background/50 rounded-lg border border-border/50">
+            <Label className="font-semibold flex items-center gap-2">
+              <Icon name="Scissors" className="text-primary" size={16} />
+              Точная обрезка
+            </Label>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Начало (мм:сс)</Label>
+                <Input
+                  type="text"
+                  placeholder="0:00"
+                  defaultValue={`${Math.floor(startTime / 60)}:${Math.floor(startTime % 60).toString().padStart(2, '0')}`}
+                  onBlur={(e) => handleTimeInput(e.target.value, 'start')}
+                  className="font-mono"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Конец (мм:сс)</Label>
+                <Input
+                  type="text"
+                  placeholder="0:00"
+                  defaultValue={`${Math.floor(endTime / 60)}:${Math.floor(endTime % 60).toString().padStart(2, '0')}`}
+                  onBlur={(e) => handleTimeInput(e.target.value, 'end')}
+                  className="font-mono"
+                />
+              </div>
+            </div>
           </div>
-          <div className="p-3 bg-secondary/5 border border-secondary/20 rounded-lg text-center">
-            <Icon name="Scissors" className="mx-auto mb-1 text-secondary" size={20} />
-            <p className="text-xs text-muted-foreground">После обрезки</p>
-            <p className="font-semibold">{formatTime(endTime - startTime)}</p>
+
+          <div className="space-y-3 p-4 bg-background/50 rounded-lg border border-border/50">
+            <Label className="font-semibold flex items-center gap-2">
+              <Icon name="Settings" className="text-secondary" size={16} />
+              Быстрые действия
+            </Label>
+            
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                onClick={() => { setTrimStart(0); setTrimEnd(100); }}
+                variant="outline"
+                size="sm"
+              >
+                <Icon name="Maximize2" className="mr-2" size={14} />
+                Весь трек
+              </Button>
+              <Button
+                onClick={() => {
+                  const fadeTime = 2;
+                  setTrimStart(0);
+                  setTrimEnd(Math.min(100, (fadeTime / duration) * 100));
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <Icon name="Volume" className="mr-2" size={14} />
+                Fade In (2с)
+              </Button>
+              <Button
+                onClick={() => {
+                  const fadeTime = 2;
+                  setTrimStart(Math.max(0, 100 - (fadeTime / duration) * 100));
+                  setTrimEnd(100);
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <Icon name="VolumeX" className="mr-2" size={14} />
+                Fade Out (2с)
+              </Button>
+              <Button
+                onClick={() => {
+                  setTrimStart(25);
+                  setTrimEnd(75);
+                }}
+                variant="outline"
+                size="sm"
+              >
+                <Icon name="Disc" className="mr-2" size={14} />
+                Середина 50%
+              </Button>
+            </div>
           </div>
-          <div className="p-3 bg-primary/5 border border-primary/20 rounded-lg text-center">
-            <Icon name="Percent" className="mx-auto mb-1 text-primary" size={20} />
-            <p className="text-xs text-muted-foreground">Сохранено</p>
-            <p className="font-semibold">{((trimEnd - trimStart)).toFixed(1)}%</p>
+        </div>
+
+        <div className="flex gap-3 pt-4 border-t border-border/50">
+          <Button
+            onClick={applyTrim}
+            className="flex-1 bg-gradient-to-r from-primary to-secondary"
+            size="lg"
+          >
+            <Icon name="Check" className="mr-2" size={20} />
+            Применить обрезку
+          </Button>
+          <Button
+            onClick={() => { setTrimStart(0); setTrimEnd(100); }}
+            variant="outline"
+            size="lg"
+          >
+            <Icon name="RotateCcw" size={20} />
+          </Button>
+        </div>
+
+        <div className="flex items-start gap-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+          <Icon name="Info" className="text-primary mt-0.5 flex-shrink-0" size={16} />
+          <div className="text-xs text-muted-foreground">
+            <p className="font-semibold text-primary mb-1">Профессиональные функции:</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>Перетаскивайте маркеры ◀▶ для точной обрезки</li>
+              <li>Кликните по выделенной области для перемещения региона</li>
+              <li>Используйте сетку для выравнивания по времени</li>
+              <li>Вводите точное время в формате мм:сс</li>
+            </ul>
           </div>
         </div>
       </CardContent>
