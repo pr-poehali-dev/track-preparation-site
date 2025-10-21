@@ -50,6 +50,83 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
     }
   };
 
+  const convertToWavStereo = async (file: File): Promise<string> => {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    
+    const numberOfChannels = 2;
+    const length = audioBuffer.length;
+    const sampleRate = audioBuffer.sampleRate;
+    
+    const wavBuffer = audioContext.createBuffer(numberOfChannels, length, sampleRate);
+    
+    if (audioBuffer.numberOfChannels === 1) {
+      const monoData = audioBuffer.getChannelData(0);
+      wavBuffer.copyToChannel(monoData, 0);
+      wavBuffer.copyToChannel(monoData, 1);
+    } else {
+      for (let channel = 0; channel < Math.min(numberOfChannels, audioBuffer.numberOfChannels); channel++) {
+        const channelData = audioBuffer.getChannelData(channel);
+        wavBuffer.copyToChannel(channelData, channel);
+      }
+    }
+    
+    const wavBlob = await bufferToWave(wavBuffer, length);
+    return URL.createObjectURL(wavBlob);
+  };
+
+  const bufferToWave = (buffer: AudioBuffer, len: number): Promise<Blob> => {
+    const numOfChan = buffer.numberOfChannels;
+    const length = len * numOfChan * 2 + 44;
+    const arrayBuffer = new ArrayBuffer(length);
+    const view = new DataView(arrayBuffer);
+    const channels: Float32Array[] = [];
+    let offset = 0;
+    let pos = 0;
+
+    const setUint16 = (data: number) => {
+      view.setUint16(pos, data, true);
+      pos += 2;
+    };
+
+    const setUint32 = (data: number) => {
+      view.setUint32(pos, data, true);
+      pos += 4;
+    };
+
+    setUint32(0x46464952);
+    setUint32(length - 8);
+    setUint32(0x45564157);
+    setUint32(0x20746d66);
+    setUint32(16);
+    setUint16(1);
+    setUint16(numOfChan);
+    setUint32(buffer.sampleRate);
+    setUint32(buffer.sampleRate * 2 * numOfChan);
+    setUint16(numOfChan * 2);
+    setUint16(16);
+    setUint32(0x61746164);
+    setUint32(length - pos - 4);
+
+    for (let i = 0; i < numOfChan; i++) {
+      channels.push(buffer.getChannelData(i));
+    }
+
+    while (pos < length) {
+      for (let i = 0; i < numOfChan; i++) {
+        let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+        sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF;
+        view.setInt16(pos, sample, true);
+        pos += 2;
+      }
+      offset++;
+    }
+
+    return Promise.resolve(new Blob([arrayBuffer], { type: 'audio/wav' }));
+  };
+
   const analyzeAudioFile = async (file: File, index: number): Promise<Track> => {
     const fileName = file.name;
     
@@ -59,8 +136,8 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
       progress: 0
     }]);
 
-    const audioUrl = URL.createObjectURL(file);
-    const audio = new Audio(audioUrl);
+    const wavUrl = await convertToWavStereo(file);
+    const audio = new Audio(wavUrl);
 
     await new Promise((resolve) => {
       audio.addEventListener('loadedmetadata', resolve, { once: true });
@@ -107,9 +184,9 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
       genre: detectedGenre,
       year: new Date().getFullYear().toString(),
       duration,
-      format: file.name.split('.').pop()?.toUpperCase() || 'MP3',
+      format: 'WAV',
       cover: 'https://cdn.poehali.dev/projects/c0c16d96-20da-46bc-8719-3cbe8ca6c4f9/files/f4a8eaeb-79aa-4f1e-a290-11f14e2bd756.jpg',
-      audioUrl,
+      audioUrl: wavUrl,
       lyrics: '',
       bpm: detectedBpm,
       key: detectedKey
@@ -206,6 +283,10 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
             <p className="text-sm text-muted-foreground">
               Поддерживаемые форматы: MP3, WAV, FLAC, M4A, OGG
             </p>
+            <p className="text-xs text-primary/80 flex items-center gap-1">
+              <Icon name="Info" size={12} />
+              Автоконвертация в WAV стерео
+            </p>
           </div>
         </div>
 
@@ -213,7 +294,7 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-primary">
               <Icon name="Activity" className="animate-pulse" />
-              <h3 className="font-semibold">Анализ аудио файлов...</h3>
+              <h3 className="font-semibold">Конвертация в WAV стерео и анализ...</h3>
             </div>
             
             {analysisProgress.map((analysis, index) => (
@@ -273,6 +354,13 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
                         <span className="text-sm font-semibold">{analysis.mood}</span>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {analysis.status === 'complete' && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+                    <Icon name="CheckCircle2" size={14} className="text-green-500" />
+                    <span className="text-xs text-green-500 font-semibold">Конвертировано в WAV стерео</span>
                   </div>
                 )}
               </div>
