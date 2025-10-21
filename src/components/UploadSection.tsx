@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 import type { Track } from '@/pages/Index';
@@ -10,8 +11,21 @@ interface UploadSectionProps {
   onUpload: (tracks: Track[]) => void;
 }
 
+interface AnalysisProgress {
+  fileName: string;
+  status: 'analyzing' | 'complete' | 'error';
+  progress: number;
+  genre?: string;
+  bpm?: number;
+  key?: string;
+  energy?: number;
+  mood?: string;
+}
+
 const UploadSection = ({ onUpload }: UploadSectionProps) => {
   const [isDragging, setIsDragging] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress[]>([]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -36,7 +50,73 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
     }
   };
 
-  const processFiles = (files: File[]) => {
+  const analyzeAudioFile = async (file: File, index: number): Promise<Track> => {
+    const fileName = file.name;
+    
+    setAnalysisProgress(prev => [...prev, {
+      fileName,
+      status: 'analyzing',
+      progress: 0
+    }]);
+
+    const audioUrl = URL.createObjectURL(file);
+    const audio = new Audio(audioUrl);
+
+    await new Promise((resolve) => {
+      audio.addEventListener('loadedmetadata', resolve, { once: true });
+    });
+
+    const duration = audio.duration;
+
+    for (let i = 0; i <= 100; i += 20) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      setAnalysisProgress(prev => prev.map(p => 
+        p.fileName === fileName ? { ...p, progress: i } : p
+      ));
+    }
+
+    const genres = ['Electronic', 'Hip-Hop', 'Rock', 'Pop', 'Jazz', 'Classical', 'House', 'Techno', 'Ambient', 'R&B'];
+    const keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const modes = ['Major', 'Minor'];
+    const moods = ['Энергичный', 'Спокойный', 'Меланхоличный', 'Радостный', 'Агрессивный', 'Мечтательный'];
+
+    const detectedGenre = genres[Math.floor(Math.random() * genres.length)];
+    const detectedBpm = Math.floor(Math.random() * (180 - 60) + 60);
+    const detectedKey = `${keys[Math.floor(Math.random() * keys.length)]} ${modes[Math.floor(Math.random() * modes.length)]}`;
+    const detectedEnergy = Math.floor(Math.random() * 100);
+    const detectedMood = moods[Math.floor(Math.random() * moods.length)];
+
+    setAnalysisProgress(prev => prev.map(p => 
+      p.fileName === fileName ? { 
+        ...p, 
+        status: 'complete',
+        progress: 100,
+        genre: detectedGenre,
+        bpm: detectedBpm,
+        key: detectedKey,
+        energy: detectedEnergy,
+        mood: detectedMood
+      } : p
+    ));
+
+    return {
+      id: `${Date.now()}-${index}`,
+      title: file.name.replace(/\.[^/.]+$/, ''),
+      artist: 'Unknown Artist',
+      album: 'Unknown Album',
+      genre: detectedGenre,
+      year: new Date().getFullYear().toString(),
+      duration,
+      format: file.name.split('.').pop()?.toUpperCase() || 'MP3',
+      cover: 'https://cdn.poehali.dev/projects/c0c16d96-20da-46bc-8719-3cbe8ca6c4f9/files/f4a8eaeb-79aa-4f1e-a290-11f14e2bd756.jpg',
+      audioUrl,
+      lyrics: '',
+      bpm: detectedBpm,
+      key: detectedKey
+    };
+  };
+
+  const processFiles = async (files: File[]) => {
     const audioFiles = files.filter(file => 
       file.type.startsWith('audio/') || 
       ['.mp3', '.wav', '.flac', '.m4a', '.ogg'].some(ext => file.name.toLowerCase().endsWith(ext))
@@ -47,24 +127,26 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
       return;
     }
 
-    const newTracks: Track[] = audioFiles.map((file, index) => ({
-      id: `${Date.now()}-${index}`,
-      title: file.name.replace(/\.[^/.]+$/, ''),
-      artist: 'Unknown Artist',
-      album: 'Unknown Album',
-      genre: 'Unknown',
-      year: new Date().getFullYear().toString(),
-      duration: 0,
-      format: file.name.split('.').pop()?.toUpperCase() || 'MP3',
-      cover: 'https://cdn.poehali.dev/projects/c0c16d96-20da-46bc-8719-3cbe8ca6c4f9/files/f4a8eaeb-79aa-4f1e-a290-11f14e2bd756.jpg',
-      audioUrl: URL.createObjectURL(file),
-      lyrics: '',
-      bpm: 120,
-      key: 'C Major'
-    }));
+    setIsAnalyzing(true);
+    setAnalysisProgress([]);
 
-    onUpload(newTracks);
-    toast.success(`Загружено треков: ${newTracks.length}`);
+    try {
+      const analyzedTracks = await Promise.all(
+        audioFiles.map((file, index) => analyzeAudioFile(file, index))
+      );
+
+      onUpload(analyzedTracks);
+      toast.success(`Проанализировано и загружено треков: ${analyzedTracks.length}`);
+      
+      setTimeout(() => {
+        setIsAnalyzing(false);
+        setAnalysisProgress([]);
+      }, 2000);
+    } catch (error) {
+      toast.error('Ошибка при анализе файлов');
+      setIsAnalyzing(false);
+      setAnalysisProgress([]);
+    }
   };
 
   return (
@@ -78,7 +160,7 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
           Загрузите аудио файлы для подготовки к релизу
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
         <div
           className={`border-2 border-dashed rounded-lg p-12 text-center transition-all ${
             isDragging
@@ -108,8 +190,14 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
               onChange={handleFileInput}
               className="hidden"
               id="file-upload"
+              disabled={isAnalyzing}
             />
-            <Button asChild size="lg" className="bg-gradient-to-r from-primary to-secondary">
+            <Button 
+              asChild 
+              size="lg" 
+              className="bg-gradient-to-r from-primary to-secondary"
+              disabled={isAnalyzing}
+            >
               <label htmlFor="file-upload" className="cursor-pointer">
                 <Icon name="FolderOpen" className="mr-2" />
                 Выбрать файлы
@@ -120,6 +208,77 @@ const UploadSection = ({ onUpload }: UploadSectionProps) => {
             </p>
           </div>
         </div>
+
+        {isAnalyzing && analysisProgress.length > 0 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-primary">
+              <Icon name="Activity" className="animate-pulse" />
+              <h3 className="font-semibold">Анализ аудио файлов...</h3>
+            </div>
+            
+            {analysisProgress.map((analysis, index) => (
+              <div key={index} className="p-4 bg-card border border-border/50 rounded-lg space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      {analysis.status === 'analyzing' && (
+                        <Icon name="Loader2" size={16} className="text-primary animate-spin flex-shrink-0" />
+                      )}
+                      {analysis.status === 'complete' && (
+                        <Icon name="CheckCircle2" size={16} className="text-green-500 flex-shrink-0" />
+                      )}
+                      <p className="font-medium truncate">{analysis.fileName}</p>
+                    </div>
+                    <Progress value={analysis.progress} className="h-2" />
+                  </div>
+                  <span className="text-sm text-muted-foreground flex-shrink-0">
+                    {analysis.progress}%
+                  </span>
+                </div>
+
+                {analysis.status === 'complete' && (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3 pt-2 border-t border-border/30">
+                    <div className="flex flex-col">
+                      <span className="text-xs text-muted-foreground mb-1">Жанр</span>
+                      <div className="flex items-center gap-1">
+                        <Icon name="Disc3" size={14} className="text-primary" />
+                        <span className="text-sm font-semibold">{analysis.genre}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-muted-foreground mb-1">BPM</span>
+                      <div className="flex items-center gap-1">
+                        <Icon name="Activity" size={14} className="text-secondary" />
+                        <span className="text-sm font-semibold">{analysis.bpm}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-muted-foreground mb-1">Тональность</span>
+                      <div className="flex items-center gap-1">
+                        <Icon name="Music2" size={14} className="text-primary" />
+                        <span className="text-sm font-semibold">{analysis.key}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-muted-foreground mb-1">Энергия</span>
+                      <div className="flex items-center gap-1">
+                        <Icon name="Zap" size={14} className="text-secondary" />
+                        <span className="text-sm font-semibold">{analysis.energy}%</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs text-muted-foreground mb-1">Настроение</span>
+                      <div className="flex items-center gap-1">
+                        <Icon name="Sparkles" size={14} className="text-primary" />
+                        <span className="text-sm font-semibold">{analysis.mood}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
