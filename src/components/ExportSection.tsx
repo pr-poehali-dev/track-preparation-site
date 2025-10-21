@@ -7,12 +7,14 @@ import Icon from '@/components/ui/icon';
 import type { Track } from '@/pages/Index';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
 
 interface ExportSectionProps {
   track: Track | null;
 }
 
 const ExportSection = ({ track }: ExportSectionProps) => {
+  const navigate = useNavigate();
   const [exportFormat, setExportFormat] = useState('mp3');
   const [includeMetadata, setIncludeMetadata] = useState(true);
   const [includeCover, setIncludeCover] = useState(true);
@@ -70,6 +72,11 @@ const ExportSection = ({ track }: ExportSectionProps) => {
       console.error('Export error:', error);
       toast.error('Ошибка при экспорте трека');
     }
+  };
+
+  const handleReleaseKit = () => {
+    if (!track) return;
+    navigate('/release-kit', { state: { track } });
   };
 
   if (!track) {
@@ -226,18 +233,39 @@ const ExportSection = ({ track }: ExportSectionProps) => {
               </div>
             </div>
 
-            <Button
-              onClick={handleExport}
-              className="w-full bg-gradient-to-r from-primary to-secondary text-lg py-6"
-              size="lg"
-            >
-              <Icon name="Download" className="mr-2" size={20} />
-              Сохранить трек
-            </Button>
-            
-            <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
-              <Icon name="Info" size={12} />
-              <span>Выберите место сохранения в диалоге браузера</span>
+            <div className="space-y-3">
+              <Button
+                onClick={handleReleaseKit}
+                className="w-full bg-gradient-to-r from-primary via-secondary to-primary text-lg py-7"
+                size="lg"
+              >
+                <Icon name="PackageCheck" className="mr-2" size={22} />
+                Подготовить релизный пакет
+              </Button>
+              
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border/50" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">или</span>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleExport}
+                className="w-full bg-gradient-to-r from-primary to-secondary text-lg py-6"
+                size="lg"
+                variant="outline"
+              >
+                <Icon name="Download" className="mr-2" size={20} />
+                Скачать только трек
+              </Button>
+              
+              <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
+                <Icon name="Info" size={12} />
+                <span>Релизный пакет включает: обложку 1500×1500, WAV стерео, текст песни</span>
+              </div>
             </div>
           </div>
         </div>
