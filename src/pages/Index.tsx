@@ -32,6 +32,7 @@ const Index = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [activeTab, setActiveTab] = useState('library');
+  const [editTab, setEditTab] = useState('editor');
 
   const handleTrackUpload = (newTracks: Track[]) => {
     setTracks(prev => [...prev, ...newTracks]);
@@ -87,32 +88,17 @@ const Index = () => {
         </header>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-9 bg-card/50 backdrop-blur-sm border border-border/50">
+          <TabsList className="grid w-full grid-cols-3 bg-card/50 backdrop-blur-sm border border-border/50">
             <TabsTrigger value="upload" className="data-[state=active]:bg-primary/20">
+              <Icon name="Upload" className="mr-2" size={18} />
               Загрузка
             </TabsTrigger>
             <TabsTrigger value="library" className="data-[state=active]:bg-primary/20">
+              <Icon name="Library" className="mr-2" size={18} />
               Библиотека
             </TabsTrigger>
-            <TabsTrigger value="editor" className="data-[state=active]:bg-primary/20">
-              Обложка
-            </TabsTrigger>
-            <TabsTrigger value="waveform" className="data-[state=active]:bg-primary/20">
-              Форма волны
-            </TabsTrigger>
-            <TabsTrigger value="effects" className="data-[state=active]:bg-primary/20">
-              Эффекты
-            </TabsTrigger>
-            <TabsTrigger value="metadata" className="data-[state=active]:bg-primary/20">
-              Метаданные
-            </TabsTrigger>
-            <TabsTrigger value="export" className="data-[state=active]:bg-primary/20">
-              Экспорт
-            </TabsTrigger>
-            <TabsTrigger value="preview" className="data-[state=active]:bg-primary/20">
-              Превью
-            </TabsTrigger>
             <TabsTrigger value="stats" className="data-[state=active]:bg-primary/20">
+              <Icon name="BarChart3" className="mr-2" size={18} />
               Статистика
             </TabsTrigger>
           </TabsList>
@@ -130,34 +116,114 @@ const Index = () => {
             />
           </TabsContent>
 
-          <TabsContent value="editor" className="animate-fade-in">
-            <EditorSection track={currentTrack} onUpdate={handleTrackUpdate} />
-          </TabsContent>
-
-          <TabsContent value="waveform" className="animate-fade-in">
-            <WaveformEditor track={currentTrack} onUpdate={handleTrackUpdate} />
-          </TabsContent>
-
-          <TabsContent value="effects" className="animate-fade-in">
-            <AudioEffectsSection track={currentTrack} onUpdate={handleTrackUpdate} />
-          </TabsContent>
-
-          <TabsContent value="metadata" className="animate-fade-in">
-            <MetadataSection track={currentTrack} onUpdate={handleTrackUpdate} />
-          </TabsContent>
-
-          <TabsContent value="export" className="animate-fade-in">
-            <ExportSection track={currentTrack} />
-          </TabsContent>
-
-          <TabsContent value="preview" className="animate-fade-in">
-            <PreviewSection track={currentTrack} />
-          </TabsContent>
-
           <TabsContent value="stats" className="animate-fade-in">
             <StatsSection tracks={tracks} />
           </TabsContent>
         </Tabs>
+
+        {currentTrack && (
+          <div className="mt-8 space-y-4 animate-fade-in">
+            <div className="flex items-center justify-between p-4 bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg">
+              <div className="flex items-center gap-4">
+                <img
+                  src={currentTrack.cover}
+                  alt={currentTrack.title}
+                  className="w-16 h-16 rounded-lg shadow-lg"
+                />
+                <div>
+                  <h3 className="font-semibold text-lg">{currentTrack.title}</h3>
+                  <p className="text-sm text-muted-foreground">{currentTrack.artist}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCurrentTrack(null)}
+                className="p-2 hover:bg-background/50 rounded-lg transition-colors"
+              >
+                <Icon name="X" size={20} />
+              </button>
+            </div>
+
+            <div className="relative">
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-primary/30 scrollbar-track-transparent">
+                <button
+                  onClick={() => setEditTab('editor')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg border whitespace-nowrap transition-all ${
+                    editTab === 'editor'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-lg'
+                      : 'bg-card/50 border-border/50 hover:border-primary/50'
+                  }`}
+                >
+                  <Icon name="Image" size={18} />
+                  <span className="font-medium">Обложка</span>
+                </button>
+                <button
+                  onClick={() => setEditTab('waveform')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg border whitespace-nowrap transition-all ${
+                    editTab === 'waveform'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-lg'
+                      : 'bg-card/50 border-border/50 hover:border-primary/50'
+                  }`}
+                >
+                  <Icon name="Activity" size={18} />
+                  <span className="font-medium">Форма волны</span>
+                </button>
+                <button
+                  onClick={() => setEditTab('effects')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg border whitespace-nowrap transition-all ${
+                    editTab === 'effects'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-lg'
+                      : 'bg-card/50 border-border/50 hover:border-primary/50'
+                  }`}
+                >
+                  <Icon name="Sliders" size={18} />
+                  <span className="font-medium">Эффекты</span>
+                </button>
+                <button
+                  onClick={() => setEditTab('metadata')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg border whitespace-nowrap transition-all ${
+                    editTab === 'metadata'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-lg'
+                      : 'bg-card/50 border-border/50 hover:border-primary/50'
+                  }`}
+                >
+                  <Icon name="FileText" size={18} />
+                  <span className="font-medium">Метаданные</span>
+                </button>
+                <button
+                  onClick={() => setEditTab('export')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg border whitespace-nowrap transition-all ${
+                    editTab === 'export'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-lg'
+                      : 'bg-card/50 border-border/50 hover:border-primary/50'
+                  }`}
+                >
+                  <Icon name="Download" size={18} />
+                  <span className="font-medium">Экспорт</span>
+                </button>
+                <button
+                  onClick={() => setEditTab('preview')}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-lg border whitespace-nowrap transition-all ${
+                    editTab === 'preview'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-lg'
+                      : 'bg-card/50 border-border/50 hover:border-primary/50'
+                  }`}
+                >
+                  <Icon name="Eye" size={18} />
+                  <span className="font-medium">Превью</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="animate-fade-in">
+              {editTab === 'editor' && <EditorSection track={currentTrack} onUpdate={handleTrackUpdate} />}
+              {editTab === 'waveform' && <WaveformEditor track={currentTrack} onUpdate={handleTrackUpdate} />}
+              {editTab === 'effects' && <AudioEffectsSection track={currentTrack} onUpdate={handleTrackUpdate} />}
+              {editTab === 'metadata' && <MetadataSection track={currentTrack} onUpdate={handleTrackUpdate} />}
+              {editTab === 'export' && <ExportSection track={currentTrack} />}
+              {editTab === 'preview' && <PreviewSection track={currentTrack} />}
+            </div>
+          </div>
+        )}
 
         {currentTrack && (
           <div className="fixed bottom-0 left-0 right-0 z-50">
