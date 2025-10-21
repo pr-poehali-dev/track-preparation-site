@@ -14,6 +14,7 @@ import EqualizerTab from './effects/EqualizerTab';
 import ReverbTab from './effects/ReverbTab';
 import CompressorTab from './effects/CompressorTab';
 import MasterTab from './effects/MasterTab';
+import ABComparePlayer from './effects/ABComparePlayer';
 
 interface AudioEffectsSectionProps {
   track: Track | null;
@@ -23,6 +24,7 @@ interface AudioEffectsSectionProps {
 const AudioEffectsSection = ({ track, onUpdate }: AudioEffectsSectionProps) => {
   const [effects, setEffects] = useState<EffectSettings>(DEFAULT_EFFECT_SETTINGS);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [hasAppliedEffects, setHasAppliedEffects] = useState(false);
 
   const applyPreset = (preset: { name: string; settings: Partial<EffectSettings> }) => {
     setEffects(prev => ({
@@ -71,6 +73,7 @@ const AudioEffectsSection = ({ track, onUpdate }: AudioEffectsSectionProps) => {
     
     setTimeout(() => {
       setIsProcessing(false);
+      setHasAppliedEffects(true);
       toast.success('Эффекты применены к треку!');
     }, 2000);
   };
@@ -98,6 +101,10 @@ const AudioEffectsSection = ({ track, onUpdate }: AudioEffectsSectionProps) => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        {track && (
+          <ABComparePlayer track={track} hasEffects={hasAppliedEffects} />
+        )}
+
         <div className="flex gap-3">
           <Button
             onClick={analyzeAndAutoApply}
