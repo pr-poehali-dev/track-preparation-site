@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 
 interface EditorSectionProps {
   track: Track | null;
-  onUpdate: (track: Track) => void;
+  onUpdate: (track: Track, action?: string) => void;
 }
 
 const EditorSection = ({ track, onUpdate }: EditorSectionProps) => {
@@ -93,7 +93,7 @@ const EditorSection = ({ track, onUpdate }: EditorSectionProps) => {
       cover: selectedCover
     };
     
-    onUpdate(updatedTrack);
+    onUpdate(updatedTrack, 'Обложка изменена');
     toast.success('Обложка обновлена');
     setCoverPreviews([]);
     setSelectedCover('');

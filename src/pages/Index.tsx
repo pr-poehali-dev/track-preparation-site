@@ -28,11 +28,19 @@ export interface Track {
   key?: string;
 }
 
+interface HistoryEntry {
+  timestamp: number;
+  action: string;
+  track: Track;
+}
+
 const Index = () => {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [activeTab, setActiveTab] = useState('library');
   const [editTab, setEditTab] = useState('editor');
+  const [history, setHistory] = useState<Map<string, HistoryEntry[]>>(new Map());
+  const [historyIndex, setHistoryIndex] = useState<Map<string, number>>(new Map());
 
   const handleTrackUpload = (newTracks: Track[]) => {
     setTracks(prev => [...prev, ...newTracks]);
@@ -41,12 +49,81 @@ const Index = () => {
 
   const handleTrackSelect = (track: Track) => {
     setCurrentTrack(track);
+    if (!history.has(track.id)) {
+      const newHistory = new Map(history);
+      newHistory.set(track.id, [{ timestamp: Date.now(), action: 'Трек загружен', track }]);
+      setHistory(newHistory);
+      
+      const newIndex = new Map(historyIndex);
+      newIndex.set(track.id, 0);
+      setHistoryIndex(newIndex);
+    }
   };
 
-  const handleTrackUpdate = (updatedTrack: Track) => {
+  const handleTrackUpdate = (updatedTrack: Track, action: string = 'Трек изменён') => {
     setTracks(prev => prev.map(t => t.id === updatedTrack.id ? updatedTrack : t));
     setCurrentTrack(updatedTrack);
+
+    const trackHistory = history.get(updatedTrack.id) || [];
+    const currentIndex = historyIndex.get(updatedTrack.id) || 0;
+    
+    const newHistoryEntry: HistoryEntry = {
+      timestamp: Date.now(),
+      action,
+      track: updatedTrack
+    };
+    
+    const updatedHistory = [...trackHistory.slice(0, currentIndex + 1), newHistoryEntry];
+    
+    const newHistory = new Map(history);
+    newHistory.set(updatedTrack.id, updatedHistory);
+    setHistory(newHistory);
+    
+    const newIndex = new Map(historyIndex);
+    newIndex.set(updatedTrack.id, updatedHistory.length - 1);
+    setHistoryIndex(newIndex);
   };
+
+  const handleUndo = () => {
+    if (!currentTrack) return;
+    
+    const trackHistory = history.get(currentTrack.id);
+    const currentIndex = historyIndex.get(currentTrack.id);
+    
+    if (!trackHistory || currentIndex === undefined || currentIndex <= 0) return;
+    
+    const newIndex = currentIndex - 1;
+    const previousState = trackHistory[newIndex];
+    
+    setCurrentTrack(previousState.track);
+    setTracks(prev => prev.map(t => t.id === previousState.track.id ? previousState.track : t));
+    
+    const newIndexMap = new Map(historyIndex);
+    newIndexMap.set(currentTrack.id, newIndex);
+    setHistoryIndex(newIndexMap);
+  };
+
+  const handleRedo = () => {
+    if (!currentTrack) return;
+    
+    const trackHistory = history.get(currentTrack.id);
+    const currentIndex = historyIndex.get(currentTrack.id);
+    
+    if (!trackHistory || currentIndex === undefined || currentIndex >= trackHistory.length - 1) return;
+    
+    const newIndex = currentIndex + 1;
+    const nextState = trackHistory[newIndex];
+    
+    setCurrentTrack(nextState.track);
+    setTracks(prev => prev.map(t => t.id === nextState.track.id ? nextState.track : t));
+    
+    const newIndexMap = new Map(historyIndex);
+    newIndexMap.set(currentTrack.id, newIndex);
+    setHistoryIndex(newIndexMap);
+  };
+
+  const canUndo = currentTrack && (historyIndex.get(currentTrack.id) || 0) > 0;
+  const canRedo = currentTrack && (historyIndex.get(currentTrack.id) || 0) < ((history.get(currentTrack.id) || []).length - 1);
 
   const handleTrackDelete = (trackId: string) => {
     setTracks(prev => prev.filter(t => t.id !== trackId));
@@ -135,12 +212,54 @@ const Index = () => {
                   <p className="text-sm text-muted-foreground">{currentTrack.artist}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setCurrentTrack(null)}
-                className="p-2 hover:bg-background/50 rounded-lg transition-colors"
-              >
-                <Icon name="X" size={20} />
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 px-3 py-1.5 bg-background/50 rounded-lg border border-border/30">
+                  <button
+                    onClick={handleUndo}
+                    disabled={!canUndo}
+                    className={`p-1.5 rounded transition-colors ${
+                      canUndo
+                        ? 'hover:bg-primary/20 text-foreground'
+                        : 'opacity-30 cursor-not-allowed'
+                    }`}
+                    title="Отменить (Ctrl+Z)"
+                  >
+                    <Icon name="Undo2" size={16} />
+                  </button>
+                  <button
+                    onClick={handleRedo}
+                    disabled={!canRedo}
+                    className={`p-1.5 rounded transition-colors ${
+                      canRedo
+                        ? 'hover:bg-primary/20 text-foreground'
+                        : 'opacity-30 cursor-not-allowed'
+                    }`}
+                    title="Вернуть (Ctrl+Y)"
+                  >
+                    <Icon name="Redo2" size={16} />
+                  </button>
+                </div>
+                
+                <button
+                  onClick={() => setEditTab('history')}
+                  className={`px-3 py-1.5 rounded-lg border transition-colors ${
+                    editTab === 'history'
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background/50 border-border/30 hover:border-primary/50'
+                  }`}
+                  title="История изменений"
+                >
+                  <Icon name="History" size={16} />
+                </button>
+                
+                <button
+                  onClick={() => setCurrentTrack(null)}
+                  className="p-2 hover:bg-background/50 rounded-lg transition-colors"
+                >
+                  <Icon name="X" size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="relative">
@@ -221,6 +340,71 @@ const Index = () => {
               {editTab === 'metadata' && <MetadataSection track={currentTrack} onUpdate={handleTrackUpdate} />}
               {editTab === 'export' && <ExportSection track={currentTrack} />}
               {editTab === 'preview' && <PreviewSection track={currentTrack} />}
+              {editTab === 'history' && (
+                <div className="bg-card/50 backdrop-blur-sm border border-border/50 rounded-lg p-6">
+                  <div className="flex items-center gap-2 mb-6">
+                    <Icon name="History" className="text-primary" size={24} />
+                    <h2 className="text-2xl font-bold">История изменений</h2>
+                  </div>
+                  
+                  {history.get(currentTrack.id) && history.get(currentTrack.id)!.length > 0 ? (
+                    <div className="space-y-2">
+                      {history.get(currentTrack.id)!.map((entry, index) => {
+                        const isCurrent = historyIndex.get(currentTrack.id) === index;
+                        const date = new Date(entry.timestamp);
+                        
+                        return (
+                          <div
+                            key={index}
+                            className={`flex items-center gap-4 p-4 rounded-lg border transition-all ${
+                              isCurrent
+                                ? 'bg-primary/10 border-primary shadow-md'
+                                : 'bg-background/50 border-border/30 hover:border-border/50'
+                            }`}
+                          >
+                            <div className={`w-2 h-2 rounded-full ${isCurrent ? 'bg-primary' : 'bg-muted-foreground/30'}`} />
+                            
+                            <div className="flex-1">
+                              <p className={`font-medium ${isCurrent ? 'text-primary' : 'text-foreground'}`}>
+                                {entry.action}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {date.toLocaleString('ru-RU')}
+                              </p>
+                            </div>
+                            
+                            {isCurrent && (
+                              <div className="px-2 py-1 bg-primary/20 rounded text-xs font-semibold text-primary">
+                                Текущая версия
+                              </div>
+                            )}
+                            
+                            {!isCurrent && (
+                              <button
+                                onClick={() => {
+                                  setCurrentTrack(entry.track);
+                                  setTracks(prev => prev.map(t => t.id === entry.track.id ? entry.track : t));
+                                  const newIndexMap = new Map(historyIndex);
+                                  newIndexMap.set(currentTrack.id, index);
+                                  setHistoryIndex(newIndexMap);
+                                }}
+                                className="px-3 py-1 text-xs bg-background hover:bg-primary/20 border border-border/50 hover:border-primary/50 rounded transition-colors"
+                              >
+                                Восстановить
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Icon name="Clock" size={48} className="mx-auto mb-4 opacity-50" />
+                      <p>История изменений пуста</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}

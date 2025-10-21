@@ -8,7 +8,7 @@ import type { Track } from '@/pages/Index';
 
 interface WaveformEditorProps {
   track: Track | null;
-  onUpdate: (track: Track) => void;
+  onUpdate: (track: Track, action?: string) => void;
 }
 
 const WaveformEditor = ({ track, onUpdate }: WaveformEditorProps) => {

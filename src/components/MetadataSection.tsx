@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 
 interface MetadataSectionProps {
   track: Track | null;
-  onUpdate: (track: Track) => void;
+  onUpdate: (track: Track, action?: string) => void;
 }
 
 const MetadataSection = ({ track, onUpdate }: MetadataSectionProps) => {

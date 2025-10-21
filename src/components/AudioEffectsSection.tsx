@@ -18,7 +18,7 @@ import ABComparePlayer from './effects/ABComparePlayer';
 
 interface AudioEffectsSectionProps {
   track: Track | null;
-  onUpdate: (track: Track) => void;
+  onUpdate: (track: Track, action?: string) => void;
 }
 
 const AudioEffectsSection = ({ track, onUpdate }: AudioEffectsSectionProps) => {
