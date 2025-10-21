@@ -18,10 +18,58 @@ const ExportSection = ({ track }: ExportSectionProps) => {
   const [includeCover, setIncludeCover] = useState(true);
   const [includeLyrics, setIncludeLyrics] = useState(true);
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!track) return;
 
-    toast.success(`Экспорт трека "${track.title}" в формате ${exportFormat.toUpperCase()}`);
+    try {
+      const fileName = `${track.artist} - ${track.title}.${exportFormat}`;
+      
+      // Создаем blob с аудио данными
+      const response = await fetch(track.audioUrl);
+      const blob = await response.blob();
+      
+      // Проверяем поддержку File System Access API
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: fileName,
+            types: [
+              {
+                description: `${exportFormat.toUpperCase()} Audio File`,
+                accept: {
+                  [`audio/${exportFormat}`]: [`.${exportFormat}`],
+                },
+              },
+            ],
+          });
+          
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          
+          toast.success(`Трек "${track.title}" успешно экспортирован`);
+        } catch (err: any) {
+          if (err.name !== 'AbortError') {
+            throw err;
+          }
+        }
+      } else {
+        // Fallback для старых браузеров
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast.success(`Трек "${track.title}" успешно экспортирован`);
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Ошибка при экспорте трека');
+    }
   };
 
   if (!track) {
@@ -184,8 +232,13 @@ const ExportSection = ({ track }: ExportSectionProps) => {
               size="lg"
             >
               <Icon name="Download" className="mr-2" size={20} />
-              Экспортировать трек
+              Сохранить трек
             </Button>
+            
+            <div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
+              <Icon name="Info" size={12} />
+              <span>Выберите место сохранения в диалоге браузера</span>
+            </div>
           </div>
         </div>
       </CardContent>
