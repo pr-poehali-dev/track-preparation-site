@@ -10,6 +10,7 @@ import ExportSection from '@/components/ExportSection';
 import PreviewSection from '@/components/PreviewSection';
 import StatsSection from '@/components/StatsSection';
 import AudioPlayer from '@/components/AudioPlayer';
+import Icon from '@/components/ui/icon';
 
 export interface Track {
   id: string;
@@ -163,6 +164,56 @@ const Index = () => {
             <AudioPlayer track={currentTrack} />
           </div>
         )}
+
+        <footer className="mt-16 mb-8 pt-8 border-t border-border/30">
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1">
+                {[...Array(3)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 h-6 bg-gradient-to-t from-primary/60 to-secondary/60 rounded-full animate-wave"
+                    style={{ animationDelay: `${i * 0.15}s` }}
+                  />
+                ))}
+              </div>
+              <span className="text-lg font-semibold bg-gradient-to-r from-primary via-secondary to-primary bg-clip-text text-transparent">
+                MusicLab Pro
+              </span>
+              <div className="flex gap-1">
+                {[...Array(3)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-1 h-6 bg-gradient-to-t from-secondary/60 to-primary/60 rounded-full animate-wave"
+                    style={{ animationDelay: `${i * 0.15}s` }}
+                  />
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-6 text-sm text-muted-foreground">
+              <div className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer">
+                <Icon name="Music2" size={14} />
+                <span>Профессиональный мастеринг</span>
+              </div>
+              <div className="w-1 h-1 rounded-full bg-border" />
+              <div className="flex items-center gap-1.5 hover:text-secondary transition-colors cursor-pointer">
+                <Icon name="Sparkles" size={14} />
+                <span>Подготовка к релизу</span>
+              </div>
+              <div className="w-1 h-1 rounded-full bg-border" />
+              <div className="flex items-center gap-1.5 hover:text-primary transition-colors cursor-pointer">
+                <Icon name="Headphones" size={14} />
+                <span>Студийное качество</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-muted-foreground/60">
+              <Icon name="Heart" size={12} className="text-primary/60" />
+              <span>Сделано с любовью к музыке</span>
+            </div>
+          </div>
+        </footer>
       </div>
     </div>
   );
