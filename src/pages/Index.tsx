@@ -4,6 +4,7 @@ import UploadSection from '@/components/UploadSection';
 import LibrarySection from '@/components/LibrarySection';
 import EditorSection from '@/components/EditorSection';
 import WaveformEditor from '@/components/WaveformEditor';
+import AudioEffectsSection from '@/components/AudioEffectsSection';
 import MetadataSection from '@/components/MetadataSection';
 import ExportSection from '@/components/ExportSection';
 import PreviewSection from '@/components/PreviewSection';
@@ -85,7 +86,7 @@ const Index = () => {
         </header>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-8 bg-card/50 backdrop-blur-sm border border-border/50">
+          <TabsList className="grid w-full grid-cols-9 bg-card/50 backdrop-blur-sm border border-border/50">
             <TabsTrigger value="upload" className="data-[state=active]:bg-primary/20">
               Загрузка
             </TabsTrigger>
@@ -97,6 +98,9 @@ const Index = () => {
             </TabsTrigger>
             <TabsTrigger value="waveform" className="data-[state=active]:bg-primary/20">
               Форма волны
+            </TabsTrigger>
+            <TabsTrigger value="effects" className="data-[state=active]:bg-primary/20">
+              Эффекты
             </TabsTrigger>
             <TabsTrigger value="metadata" className="data-[state=active]:bg-primary/20">
               Метаданные
@@ -131,6 +135,10 @@ const Index = () => {
 
           <TabsContent value="waveform" className="animate-fade-in">
             <WaveformEditor track={currentTrack} onUpdate={handleTrackUpdate} />
+          </TabsContent>
+
+          <TabsContent value="effects" className="animate-fade-in">
+            <AudioEffectsSection track={currentTrack} onUpdate={handleTrackUpdate} />
           </TabsContent>
 
           <TabsContent value="metadata" className="animate-fade-in">
