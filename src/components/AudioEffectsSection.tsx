@@ -15,6 +15,7 @@ import ReverbTab from './effects/ReverbTab';
 import CompressorTab from './effects/CompressorTab';
 import MasterTab from './effects/MasterTab';
 import ABComparePlayer from './effects/ABComparePlayer';
+import RealtimeEqualizer from './effects/RealtimeEqualizer';
 
 interface AudioEffectsSectionProps {
   track: Track | null;
@@ -25,6 +26,7 @@ const AudioEffectsSection = ({ track, onUpdate }: AudioEffectsSectionProps) => {
   const [effects, setEffects] = useState<EffectSettings>(DEFAULT_EFFECT_SETTINGS);
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasAppliedEffects, setHasAppliedEffects] = useState(false);
+  const [realtimeEQEnabled, setRealtimeEQEnabled] = useState(false);
 
   const applyPreset = (preset: { name: string; settings: Partial<EffectSettings> }) => {
     setEffects(prev => ({
@@ -157,13 +159,25 @@ const AudioEffectsSection = ({ track, onUpdate }: AudioEffectsSectionProps) => {
           </div>
         </div>
 
-        <Tabs defaultValue="eq" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs defaultValue="realtime-eq" className="w-full">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="realtime-eq" className="flex items-center gap-1">
+              <Icon name="Radio" size={14} />
+              Live EQ
+            </TabsTrigger>
             <TabsTrigger value="eq">Эквалайзер</TabsTrigger>
-            <TabsTrigger value="reverb">Реверберация</TabsTrigger>
+            <TabsTrigger value="reverb">Реверб</TabsTrigger>
             <TabsTrigger value="comp">Компрессор</TabsTrigger>
             <TabsTrigger value="master">Мастеринг</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="realtime-eq">
+            <RealtimeEqualizer 
+              track={track} 
+              enabled={realtimeEQEnabled} 
+              onEnabledChange={setRealtimeEQEnabled}
+            />
+          </TabsContent>
 
           <TabsContent value="eq">
             <EqualizerTab effects={effects} setEffects={setEffects} />
