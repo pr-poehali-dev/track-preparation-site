@@ -13,37 +13,50 @@ interface EditorSectionProps {
 }
 
 const EditorSection = ({ track, onUpdate }: EditorSectionProps) => {
-  const [coverFile, setCoverFile] = useState<File | null>(null);
-  const [coverPreview, setCoverPreview] = useState<string>('');
+  const [coverPreviews, setCoverPreviews] = useState<string[]>([]);
+  const [selectedCover, setSelectedCover] = useState<string>('');
 
   const handleCoverChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (!file.type.startsWith('image/')) {
-        toast.error('Пожалуйста, выберите изображение');
-        return;
-      }
-      setCoverFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setCoverPreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const newPreviews: string[] = [];
+      let loadedCount = 0;
+
+      Array.from(files).forEach((file) => {
+        if (!file.type.startsWith('image/')) {
+          toast.error(`${file.name} - не изображение`);
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          newPreviews.push(reader.result as string);
+          loadedCount++;
+
+          if (loadedCount === files.length) {
+            setCoverPreviews(newPreviews);
+            if (newPreviews.length > 0) {
+              setSelectedCover(newPreviews[0]);
+            }
+          }
+        };
+        reader.readAsDataURL(file);
+      });
     }
   };
 
   const handleApplyCover = () => {
-    if (!track || !coverPreview) return;
+    if (!track || !selectedCover) return;
     
     const updatedTrack: Track = {
       ...track,
-      cover: coverPreview
+      cover: selectedCover
     };
     
     onUpdate(updatedTrack);
     toast.success('Обложка обновлена');
-    setCoverFile(null);
-    setCoverPreview('');
+    setCoverPreviews([]);
+    setSelectedCover('');
   };
 
   if (!track) {
@@ -111,26 +124,54 @@ const EditorSection = ({ track, onUpdate }: EditorSectionProps) => {
             <div>
               <Label className="text-lg font-semibold mb-4 block">Загрузить новую обложку</Label>
               
-              {coverPreview ? (
+              {coverPreviews.length > 0 ? (
                 <div className="space-y-4">
-                  <img
-                    src={coverPreview}
-                    alt="Preview"
-                    className="w-full aspect-square object-cover rounded-lg shadow-xl border-2 border-primary"
-                  />
+                  <div className="relative">
+                    <img
+                      src={selectedCover}
+                      alt="Selected preview"
+                      className="w-full aspect-square object-cover rounded-lg shadow-xl border-2 border-primary"
+                    />
+                    <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm px-3 py-1 rounded-full text-white text-xs">
+                      {coverPreviews.findIndex(c => c === selectedCover) + 1} / {coverPreviews.length}
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <div className="flex gap-3 overflow-x-auto pb-2 scroll-smooth snap-x snap-mandatory scrollbar-thin scrollbar-thumb-primary/30 scrollbar-track-transparent">
+                      {coverPreviews.map((preview, index) => (
+                        <div
+                          key={index}
+                          onClick={() => setSelectedCover(preview)}
+                          className={`flex-shrink-0 w-24 h-24 rounded-lg cursor-pointer transition-all snap-start ${
+                            selectedCover === preview
+                              ? 'ring-2 ring-primary scale-105 shadow-lg'
+                              : 'opacity-60 hover:opacity-100'
+                          }`}
+                        >
+                          <img
+                            src={preview}
+                            alt={`Preview ${index + 1}`}
+                            className="w-full h-full object-cover rounded-lg"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="flex gap-2">
                     <Button
                       onClick={handleApplyCover}
                       className="flex-1 bg-gradient-to-r from-primary to-secondary"
                     >
                       <Icon name="Check" className="mr-2" size={16} />
-                      Применить
+                      Применить выбранную
                     </Button>
                     <Button
                       variant="outline"
                       onClick={() => {
-                        setCoverFile(null);
-                        setCoverPreview('');
+                        setCoverPreviews([]);
+                        setSelectedCover('');
                       }}
                     >
                       <Icon name="X" size={16} />
@@ -141,11 +182,12 @@ const EditorSection = ({ track, onUpdate }: EditorSectionProps) => {
                 <div className="border-2 border-dashed border-border/50 rounded-lg p-8 text-center hover:border-primary/50 transition-colors">
                   <Icon name="Image" size={48} className="mx-auto mb-4 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground mb-4">
-                    Загрузите изображение для обложки
+                    Загрузите одно или несколько изображений
                   </p>
                   <Input
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={handleCoverChange}
                     className="hidden"
                     id="cover-upload"
@@ -153,11 +195,11 @@ const EditorSection = ({ track, onUpdate }: EditorSectionProps) => {
                   <Button asChild variant="outline">
                     <label htmlFor="cover-upload" className="cursor-pointer">
                       <Icon name="Upload" className="mr-2" size={16} />
-                      Выбрать файл
+                      Выбрать файлы
                     </label>
                   </Button>
                   <p className="text-xs text-muted-foreground mt-3">
-                    Рекомендуемый размер: 3000x3000 пикселей
+                    Можно выбрать несколько файлов сразу
                   </p>
                 </div>
               )}
